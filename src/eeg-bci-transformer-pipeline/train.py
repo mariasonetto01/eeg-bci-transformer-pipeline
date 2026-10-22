@@ -123,7 +123,7 @@ class EEGTrainer:
 
         return eval_loss, eval_acc
     
-    def train_and_validate(self, train_loader, val_loader, epochs):
+    def train_and_validate(self, train_loader, val_loader, epochs, scheduler=None, ):
 
         train_losses = []
         val_losses   = []
@@ -132,7 +132,7 @@ class EEGTrainer:
         best_val_acc = 0.0
         best_model_weights = copy.deepcopy(self.model.state_dict())
         
-        early_stopper = EarlyStopper(patience=7, min_delta=1e-4)
+        early_stopper = EarlyStopper(patience= 5 , min_delta=1e-4)
 
         for epoch in range(epochs):
         
@@ -141,7 +141,17 @@ class EEGTrainer:
         
                 #  VALIDATION 
                 val_loss, val_acc = self.evaluate(val_loader)
-        
+
+                # AGGIORNAMENTO LO SCHEDULER IN MODO SICURO
+                if scheduler is not None:
+                    scheduler.step()
+                
+                # Tentativo sicuro di recuperare il learning rate corrente senza far crashare il codice
+                try:
+                    current_lr = self.optimizer.param_groups[0]['lr']
+                except Exception:
+                    current_lr = 0.001  # Valore di fallback se qualcosa non va
+            
                 train_losses.append(train_loss)
                 val_losses.append(val_loss)
                 val_accuracies.append(val_acc)
@@ -158,7 +168,7 @@ class EEGTrainer:
                     f' val_loss={val_loss:.5f}, val_acc={val_acc * 100:.2f}%'
                 )
             
-                print(f"Epoch {epoch+1}: train_loss={train_loss:.5f}, val_loss={val_loss:.5f},  val_accuracies={val_acc*100:.2f}%") #acc in %
+                
         
                 if early_stopper.early_stop(val_loss):
                     print(f"Early stopping all'epoca {epoch+1}")

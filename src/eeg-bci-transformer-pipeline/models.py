@@ -144,13 +144,26 @@ class ConvolutionModule(nn.Module):
     def __init__(self, k=40, num_chan = 64):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=k, kernel_size=(1, 25), stride=(1, 1))
+        # Parametri articolo
+        #self.conv1 = nn.Conv2d(in_channels=1, out_channels=k, kernel_size=(1, 25), stride=(1, 1))
+        #self.conv2 = nn.Conv2d(in_channels=k, out_channels=k, kernel_size=(num_chan, 1), stride=(1, 1))
+        
+        #self.bn = nn.BatchNorm2d(k)
+        #self.elu = nn.ELU()
+
+        #self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))      
+
+        # Nuovi parametri
+
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=k, kernel_size=(1, 16), stride=(1, 1)) #cambiato kernel size per prendere finestre di 100 ms 
         self.conv2 = nn.Conv2d(in_channels=k, out_channels=k, kernel_size=(num_chan, 1), stride=(1, 1))
         
         self.bn = nn.BatchNorm2d(k)
         self.elu = nn.ELU()
 
-        self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))      
+        self.pool = nn.AvgPool2d(kernel_size=(1, 48), stride=(1, 10)) #cambiato kernel size per prendere finestre di 300 ms (con il vecchio valore di 75 la finestra era di 468 ms e forse troppo ampia da smorzare il segnale nelle bande mu e beta)   
+
+        self.droputconv = nn.Dropout(0.5)
 
     def forward(self,x):
 
@@ -184,8 +197,8 @@ class EEGConformer(nn.Module):
 
         self.cnn = ConvolutionModule(k=40, num_chan=64)
 
-        self.input_linear = nn.Linear(40, d_model)
-        self.spatial_pos_embed = nn.Parameter(torch.randn(1, num_channels, d_model))
+        #self.input_linear = nn.Linear(40, d_model)
+        #self.spatial_pos_embed = nn.Parameter(torch.randn(1, num_channels, d_model))
 
         self.encoder_layers = nn.ModuleList([
                 TransformerLayer(dropout=dropout, d_model=d_model, nhead=nhead, d_ff=d_ff)
@@ -205,13 +218,14 @@ class EEGConformer(nn.Module):
         
 
         x = self.cnn(x) # Shape (batch_size, k, C, ((Ti - kernel size (75))/stride (75)) +1)
+        #print("Shape dopo CNN:", x.shape)
 
         x = x.squeeze(2) # Shape (batch_size, k, reduced_time, si rimuove 1 perchè non serve più
         x = x.permute(0, 2, 1) # Shape (batch_size, reduced_time, k)
-
-        x = self.input_linear(x)  # Shape: (batch_size, reduced_time, d_model)
+        #print("Shape pronta per Transformer:", x.shape)
+        #x = self.input_linear(x)  # Shape: (batch_size, reduced_time, d_model)
         
-        x = x + self.spatial_pos_embed[:, :x.size(1), :]
+        #x = x + self.spatial_pos_embed[:, :x.size(1), :]
 
         all_attn_weights = []
         for layer in self.encoder_layers:

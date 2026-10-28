@@ -39,7 +39,7 @@ class EEGTrainer:
 
         self.model.to(self.device)
 
-    def train(self, train_loader):    #quale sia il train_dataset penso lo sceglo quando faccio groupfold
+    def train(self, train_loader, max_grad_norm=1.0):    
         """Train the model."""
 
         #train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True) #conviene definirlo poi nel notebook
@@ -63,6 +63,9 @@ class EEGTrainer:
             loss = self.criterion(outputs, y_batch) # Loss
 
             loss.backward() # Backpropagation
+            
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_grad_norm)
 
             #controllo i gradienti
             #for name, param in self.model.named_parameters():
@@ -70,7 +73,7 @@ class EEGTrainer:
             #        print(f"{name}: grad norm = {param.grad.norm().item()}")
             #    else:
             #        print(f"{name}: grad è None!")
-            
+
             self.optimizer.step() # Update
             
             running_loss += loss.item() 
@@ -79,6 +82,7 @@ class EEGTrainer:
 
         return epoch_loss
 
+    
 
     def evaluate(self, val_loader):
         self.model.eval()  
@@ -123,7 +127,7 @@ class EEGTrainer:
 
         return eval_loss, eval_acc
     
-    def train_and_validate(self, train_loader, val_loader, epochs, scheduler=None, ):
+    def train_and_validate(self, train_loader, val_loader, epochs, scheduler=None, max_grad_norm=1.0):
 
         train_losses = []
         val_losses   = []
@@ -132,25 +136,27 @@ class EEGTrainer:
         best_val_acc = 0.0
         best_model_weights = copy.deepcopy(self.model.state_dict())
         
-        early_stopper = EarlyStopper(patience= 5 , min_delta=1e-4)
+        early_stopper = EarlyStopper(patience= 10 , min_delta=1e-4)
 
         for epoch in range(epochs):
         
                 # TRAIN 
-                train_loss = self.train(train_loader)
+                train_loss = self.train(train_loader, max_grad_norm=max_grad_norm)
         
                 #  VALIDATION 
                 val_loss, val_acc = self.evaluate(val_loader)
 
-                # AGGIORNAMENTO LO SCHEDULER IN MODO SICURO
                 if scheduler is not None:
-                    scheduler.step()
+                    if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step(val_loss)  # ReduceLROnPlateau esige la validation loss
+                    else:
+                        scheduler.step()       
                 
                 # Tentativo sicuro di recuperare il learning rate corrente senza far crashare il codice
                 try:
                     current_lr = self.optimizer.param_groups[0]['lr']
                 except Exception:
-                    current_lr = 0.001  # Valore di fallback se qualcosa non va
+                    current_lr = 0.001  # Fallback
             
                 train_losses.append(train_loss)
                 val_losses.append(val_loss)
@@ -177,5 +183,4 @@ class EEGTrainer:
         self.model.load_state_dict(best_model_weights) #iniettare nuovamente i pesi "congelati" nel modello 
 
         return best_val_acc, train_losses, val_losses, val_accuracies
-        
 

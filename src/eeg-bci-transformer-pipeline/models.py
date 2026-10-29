@@ -197,8 +197,15 @@ class EEGConformer(nn.Module):
 
         self.cnn = ConvolutionModule(k=40, num_chan=64)
 
-        #self.input_linear = nn.Linear(40, d_model)
-        #self.spatial_pos_embed = nn.Parameter(torch.randn(1, num_channels, d_model))
+        # Calcoliamo la lunghezza della sequenza temporale in uscita dalla CNN per dimensionare il Positional Encoding
+        with torch.no_grad():
+            dummy = torch.zeros(1, num_channels, time_steps)
+            dummy_out = self.cnn(dummy)
+            # dummy_out ha forma: (Batch, k=40, C=1, reduced_time)
+            self.seq_len = dummy_out.shape[3]
+
+        self.input_linear = nn.Linear(40, d_model)
+        #self.pos_embed = nn.Parameter(torch.randn(1, self.seq_len, d_model) * 0.02)
 
         self.encoder_layers = nn.ModuleList([
                 TransformerLayer(dropout=dropout, d_model=d_model, nhead=nhead, d_ff=d_ff)
@@ -220,12 +227,13 @@ class EEGConformer(nn.Module):
         x = self.cnn(x) # Shape (batch_size, k, C, ((Ti - kernel size (75))/stride (75)) +1)
         #print("Shape dopo CNN:", x.shape)
 
-        x = x.squeeze(2) # Shape (batch_size, k, reduced_time, si rimuove 1 perchè non serve più
+        x = x.squeeze(2) # Shape (batch_size, k) reduced_time, si rimuove 1 perchè non serve più
         x = x.permute(0, 2, 1) # Shape (batch_size, reduced_time, k)
         #print("Shape pronta per Transformer:", x.shape)
-        #x = self.input_linear(x)  # Shape: (batch_size, reduced_time, d_model)
         
-        #x = x + self.spatial_pos_embed[:, :x.size(1), :]
+        x = self.input_linear(x)  # Shape: (batch_size, reduced_time, d_model)
+        
+        #x = x + self.pos_embed[:, :x.size(1), :]
 
         all_attn_weights = []
         for layer in self.encoder_layers:

@@ -101,7 +101,7 @@ class EEGTrainer:
         best_val_acc = 0.0
         best_model_weights = copy.deepcopy(self.model.state_dict())
         
-        early_stopper = EarlyStopper(patience=5, min_delta=1e-4)
+        early_stopper = EarlyStopper(patience=50, min_delta=1e-4)
 
         for epoch in range(epochs):
             # TRAIN 
@@ -140,7 +140,7 @@ class EEGTrainer:
         best_val_acc = 0.0
         best_model_weights = copy.deepcopy(self.model.state_dict())
         
-        early_stopper = EarlyStopper(patience=7, min_delta=1e-4)
+        early_stopper = EarlyStopper(patience=50, min_delta=1e-4)
 
         for epoch in range(epochs):
             # TRAIN 

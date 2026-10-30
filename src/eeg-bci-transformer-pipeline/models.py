@@ -137,177 +137,152 @@ class TransformerLayer(nn.Module):
 
         return x, attn_weights 
 
-class ConvolutionModule(nn.Module):
-
-    '''
-    '''
-    def __init__(self, k=40, num_chan = 64):
-        super().__init__()
-
-        # Parametri articolo
-        #self.conv1 = nn.Conv2d(in_channels=1, out_channels=k, kernel_size=(1, 25), stride=(1, 1))
-        #self.conv2 = nn.Conv2d(in_channels=k, out_channels=k, kernel_size=(num_chan, 1), stride=(1, 1))
-        
-        #self.bn = nn.BatchNorm2d(k)
-        #self.elu = nn.ELU()
-
-        #self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))      
-
-        # Nuovi parametri
-
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=k, kernel_size=(1, 16), stride=(1, 1)) #cambiato kernel size per prendere finestre di 100 ms 
-        self.conv2 = nn.Conv2d(in_channels=k, out_channels=k, kernel_size=(num_chan, 1), stride=(1, 1))
-        
-        self.bn = nn.BatchNorm2d(k)
-        self.elu = nn.ELU()
-
-        self.pool = nn.AvgPool2d(kernel_size=(1, 48), stride=(1, 10)) #cambiato kernel size per prendere finestre di 300 ms (con il vecchio valore di 75 la finestra era di 468 ms e forse troppo ampia da smorzare il segnale nelle bande mu e beta)   
-
-        self.droputconv = nn.Dropout(0.5)
-
-    def forward(self,x):
-
-        # x Shape: (batch_size, num_channels, time_points)
-        
-        x = x.unsqueeze(1) # Unsqueeze to add a channel dimension for Conv2d that need 4 dimensions
-
-        x = self.conv1(x) # Shape (batch_size, k, num_channels, Ti=(time_points - kernel size (25)) +1)
-        x = self.conv2(x) # Shape (batch_size, k, C=(num_channels - kernel size (66)) + 1, Ti)
-        x = self.bn(x) # Shape (batch_size, k, C , Ti)
-        x = self.elu(x) # Shape (batch_size, k, C, Ti) 
-        x = self.pool(x) # Shape (batch_size, k, C, ((Ti - kernel size (75))/stride (75)) +1)
-
-        return x # Shape (batch_size, k, C, ((Ti - kernel size (75))/stride (75)) +1)
-
-class EEGConformer(nn.Module):
-    '''
-    '''
-
-    def __init__(self, num_channels, time_steps, d_model, nhead, num_layers, d_ff, dropout, num_classes):
-        super().__init__()
-    
-        self.num_channels = num_channels
-        self.time_steps = time_steps
-        self.d_model = d_model 
-        self.nhead = nhead
-        self.num_layers = num_layers
-        self.d_ff = d_ff
-        self.dropout = dropout
-        self.num_classes = num_classes
-
-        self.cnn = ConvolutionModule(k=40, num_chan=64)
-
-        # Calcoliamo la lunghezza della sequenza temporale in uscita dalla CNN per dimensionare il Positional Encoding
-        with torch.no_grad():
-            dummy = torch.zeros(1, num_channels, time_steps)
-            dummy_out = self.cnn(dummy)
-            # dummy_out ha forma: (Batch, k=40, C=1, reduced_time)
-            self.seq_len = dummy_out.shape[3]
-
-        self.input_linear = nn.Linear(40, d_model)
-        #self.pos_embed = nn.Parameter(torch.randn(1, self.seq_len, d_model) * 0.02)
-
-        self.encoder_layers = nn.ModuleList([
-                TransformerLayer(dropout=dropout, d_model=d_model, nhead=nhead, d_ff=d_ff)
-                for _ in range(num_layers)
-            ])
-
-        self.classifier = nn.Sequential(
-        nn.Linear(d_model, 32),       # Primo layer fully-connected che riduce la dimensionalità
-        nn.ReLU(),                    # Attivazione non lineare
-        nn.Dropout(dropout),          # Dropout per regolarizzare
-        nn.Linear(32, num_classes)    # Secondo layer che sputa fuori i valori (logit) per le M classi
-        )
-
-    def forward(self,x) :
-
-
-        
-
-        x = self.cnn(x) # Shape (batch_size, k, C, ((Ti - kernel size (75))/stride (75)) +1)
-        #print("Shape dopo CNN:", x.shape)
-
-        x = x.squeeze(2) # Shape (batch_size, k) reduced_time, si rimuove 1 perchè non serve più
-        x = x.permute(0, 2, 1) # Shape (batch_size, reduced_time, k)
-        #print("Shape pronta per Transformer:", x.shape)
-        
-        x = self.input_linear(x)  # Shape: (batch_size, reduced_time, d_model)
-        
-        #x = x + self.pos_embed[:, :x.size(1), :]
-
-        all_attn_weights = []
-        for layer in self.encoder_layers:
-            x, attn_weights = layer(x) # x mantiene la forma: (batch_size, reduced_time, d_model)
-            all_attn_weights.append(attn_weights)
-            
-        x = x.mean(dim=1) # Ora la forma diventa: (batch_size, d_model)
-        
-        out = self.classifier(x) # Forma finale: (batch_size, num_classes)
-        
-        return out, all_attn_weights
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import math
 
-class EEGTransformerConv1D(nn.Module):
-    def __init__(self, num_channels=64, time_steps=641, d_model=32, nhead=4, num_layers=1, d_ff=128, dropout=0.4, num_classes=2):
+
+class SpatialCNN(nn.Module):
+    """
+    Ramo s-CTrans (Spatial/Temporal CNN Module):
+    1. Conv2D (1x16,SAME padding) -> Conv temporale
+    2. AvgPool2D (1x32)
+    3. Conv2D (1x15, VALID padding)
+    """
+    def __init__(self, input_channels=1 , output_channels= 64):
         super().__init__()
         
-        # 1. Estrazione Temporale Locale tramite Conv1D
-        # Prende in input i canali EEG come canali della convoluzione (Batch, num_channels, time_steps)
-        self.temporal_conv = nn.Sequential(
-            nn.Conv1d(in_channels=num_channels, out_channels=d_model, kernel_size=32, stride=4, padding=15),
-            nn.BatchNorm1d(d_model),
-            nn.ELU(),
-            nn.Dropout(dropout)
-        )
-        
-        # Calcoliamo dinamicamente la lunghezza della sequenza temporale in uscita dalla Conv1D
-        with torch.no_grad():
-            dummy = torch.zeros(1, num_channels, time_steps)
-            dummy_out = self.temporal_conv(dummy) # Shape: (Batch, d_model, seq_len)
-            self.seq_len = dummy_out.shape[2]
-            
-        # 2. Positional Encoding temporale addestrabile
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.seq_len, d_model) * 0.02)
-        
-        # 3. Modulo Transformer (sfrutta i tuoi TransformerLayer esistenti)
-        self.encoder_layers = nn.ModuleList([
-            TransformerLayer(dropout=dropout, d_model=d_model, nhead=nhead, d_ff=d_ff)
-            for _ in range(num_layers)
-        ])
-        
-        # 4. Classificatore Finale
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(d_model),
-            nn.Linear(d_model, 32),
-            nn.ELU(),
-            nn.Dropout(dropout),
-            nn.Linear(32, num_classes)
-        )
+        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=output_channels, kernel_size=(1, 16), padding="same")
+        self.pool1 = nn.AvgPool2d(kernel_size=(1, 32))
+        self.conv2 = nn.Conv2d(in_channels=output_channels, out_channels=output_channels, kernel_size=(1, 15), padding="valid")
+        self.relu = nn.ReLU()
+
+
 
     def forward(self, x):
-        # x shape in ingresso: (Batch, num_channels, time_steps)
+        # x: (batch_size, num_channels, time_points)
+       
+        x = x.unsqueeze(1) # Unsqueeze to add a channel dimension for Conv2d that need 4 dimensions
+
+        x = self.conv1(x) # Shape (batch_size, out_channels, num_channels, time_points)
+        x = self.relu(x) # Shape (batch_size, out_channels, num_channels, time_points)
+
+        x = self.pool1(x) # Shape (batch_size, out_channels, num_channels, (time_points/32))
+
+        x = self.conv2(x) # Shape (batch_size, out_channels, num_channels, (time_points/32)-15)
+        x = self.relu(x) # Shape (batch_size, out_channels, num_channels, (time_points/32)-15))
+
+        # Faccio il seguente reshape per avere le dimensioni da poter usare con Pytorch
+        x = x.permute(0, 2, 1, 3) # Shape: (batch_size, num_channels, out_channels, reduced_time)
         
-        # A. Passaggio attraverso la Conv1D -> (Batch, d_model, seq_len)
-        x = self.temporal_conv(x)
+        x = x.mean(dim=-1) # Shape finale: (batch_size, num_channels, out_channels) 
+
+
+
+
+        return x # Shape (batch_size, out_channels, num_channels, reduced_time=(time_points/32)-15))
+
+
+
+class TemporalCNN(nn.Module): #Da migliorare
+    """
+         Ramo t-CTrans (Temporal/Spatial CNN Module):
+           1. Conv2D (C x 1, SAME padding) -> Conv spaziale tra tutti i canali EEG
+           2. AvgPool2D (1 x 8)
+           3. Trasposizione features
+    """
+    def __init__(self, input_channels=1 , output_channels= 64, num_channels =64):
+        super().__init__()
         
-        # B. Riorganizziamo gli assi per il Transformer -> (Batch, seq_len, d_model)
-        x = x.transpose(1, 2)
+        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=output_channels, kernel_size=(num_channels, 1), padding="same")
+        self.pool1 = nn.AvgPool2d(kernel_size=(1, 8))
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        # x: (batch_size, num_channels, time_points)
+       
+        x = x.unsqueeze(1) # Unsqueeze to add a channel dimension for Conv2d that need 4 dimensions
+
+        x = self.conv1(x) # Shape (batch_size, 1, num_channels, time_points)
+        x = self.relu(x) # Shape (batch_size, out_channels, num_channels, time_points)
+
+        x = self.pool1(x) # Shape (batch_size, out_channels, num_channels, reduced_time= (time_points/8))
+
+        b, c, h, w = x.shape
+        x = x.permute(0, 3, 2, 1).contiguous().view(b, w * h, c) # Shape (batch_size,seq_len_t=reduced_time * num_channels, out_channels )
+
+
+        return x  # Shape (batch_size, seq_len_t, out_channels)
+
+
+class StreamCTrans(nn.Module):
+    """
+    Singolo flusso CTrans (usato sia per s-CTrans che per t-CTrans):
+    CNN -> Positional Encoding -> Transformer Encoder Layer
+    """
+    def __init__(self, cnn_module: nn.Module, d_model: int = 64, nhead: int = 4, num_layers: int = 2):
+        super().__init__()
+        self.cnn = cnn_module
+        self.pos_encoder = PositionalEncoding(d_model=d_model)
         
-        # C. Aggiungiamo il Positional Encoding
-        x = x + self.pos_embedding[:, :x.size(1), :]
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=d_model * 4,
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.cnn(x)                # [batch, seq_len, d_model]
+        x = self.pos_encoder(x)         # Aggiunge informazioni posizionali
+        x = self.transformer(x)        # Multi-Head Attention + FeedForward
+        x = x.mean(dim=1)              # Global Pooling lungo la dimensione della sequenza
+        return x
+
+class FCTransModel(nn.Module):
+    """
+    Fusion-CNN + Transformer Model (f-CTrans)
+    Combina in parallelo i due rami:
+    - s-CTrans (Spatial stream)
+    - t-CTrans (Temporal stream)
+    """
+    def __init__(self, num_channels: int, num_classes: int, d_model: int = 64, nhead: int = 4):
+        super().__init__()
         
-        # D. Passaggio attraverso i blocchi Transformer (collezionando i pesi d'attenzione)
-        all_attn_weights = []
-        for layer in self.encoder_layers:
-            x, attn_weights = layer(x) # Shape di x: (Batch, seq_len, d_model)
-            all_attn_weights.append(attn_weights)
+        # Ramo Spaziale
+        s_cnn = SpatialCNN(in_channels=num_channels, out_dim=d_model)
+        self.s_ctrans = StreamCTrans(cnn_module=s_cnn, d_model=d_model, nhead=nhead)
+        
+        # Ramo Temporale
+        t_cnn = TemporalCNN(num_eeg_channels=num_channels, out_dim=d_model)
+        self.t_ctrans = StreamCTrans(cnn_module=t_cnn, d_model=d_model, nhead=nhead)
+        
+        # Classification Head (Fully Connected Layers)
+        # Concatenazione delle feature dei due rami -> 2 * d_model
+        self.fc = nn.Sequential(
+            nn.Linear(d_model * 2, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, num_classes)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Input x: Tensor con forma [Batch_Size, Canali_EEG, Punti_Temporali]
+        """
+        # Aggiunge dimensione canale immagine (1) per la Conv2D -> [Batch, 1, Canali, Tempo]
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
             
-        # E. Global Average Pooling lungo la dimensione temporale (seq_len) -> (Batch, d_model)
-        x = x.mean(dim=1)
+        # Elaborazione in parallelo nei due stream
+        feat_spatial = self.s_ctrans(x)   # [Batch, d_model]
+        feat_temporal = self.t_ctrans(x)  # [Batch, d_model]
         
-        # F. Classificazione finale -> (Batch, num_classes)
-        out = self.classifier(x)
+        # Fusion dei due flussi tramite concatenazione
+        fusion_features = torch.cat((feat_spatial, feat_temporal), dim=1) # [Batch, d_model * 2]
         
-        return out, all_attn_weights
+        # Classificazione finale
+        output = self.fc(fusion_features)
+        return output

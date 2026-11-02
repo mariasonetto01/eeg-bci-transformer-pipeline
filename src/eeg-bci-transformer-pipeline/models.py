@@ -219,7 +219,7 @@ class TemporalCNN(nn.Module): #Da migliorare
         return x  # Shape (batch_size, seq_len_t, out_channels)
 
 
-class PositionalEncoding(nn.Module):
+class PositionalEncoding_PE(nn.Module):
     def __init__(self, d_model, max_len = 5000):
         super().__init__()
         
@@ -243,6 +243,15 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return x
 
+class LearnableSpatialPositionalEncoding_LPE(nn.Module):
+    def __init__(self, num_channels, d_model):
+        super().__init__()
+        # Un embedding learnable per ogni canale EEG
+        self.spatial_embedding = nn.Parameter(torch.randn(1, num_channels, d_model))
+
+    def forward(self, x):
+        # x shape: (batch_size, num_channels, d_model)
+        return x + self.spatial_embedding[:, :x.size(1), :]
 
 class F_CTrans(nn.Module):
 
@@ -252,7 +261,7 @@ class F_CTrans(nn.Module):
         #spatial
 
         self.spatial_cnn = SpatialCNN(output_channels = d_model)
-        self.spatial_pe = PositionalEncoding(d_model, max_len=num_channels)
+        self.spatial_lpe = LearnableSpatialPositionalEncoding_LPE(num_channels, d_model)
         self.spatial_transformer_blocks = nn.ModuleList([
             TransformerLayer(dropout, d_model, nhead, d_ff)
             for _ in range(num_layers)
@@ -261,7 +270,7 @@ class F_CTrans(nn.Module):
         #temporal
 
         self.temporal_cnn = TemporalCNN(output_channels = d_model, num_channels=num_channels)
-        self.temporal_pe = PositionalEncoding(d_model, max_len=5000) 
+        self.temporal_pe = PositionalEncoding_PE(d_model, max_len=5000) 
         self.temporal_transformer_blocks = nn.ModuleList([
             TransformerLayer(dropout, d_model, nhead, d_ff)
             for _ in range(num_layers)
@@ -288,7 +297,7 @@ class F_CTrans(nn.Module):
 
         # Spatial stream
         x_spatial = self.spatial_cnn(x) # Output: (batch_size, num_channels, model_dim)
-        x_spatial = self.spatial_pe(x_spatial)
+        x_spatial = self.spatial_lpe(x_spatial)
 
         spatial_attention_weights = []
         for block in self.spatial_transformer_blocks:
@@ -324,4 +333,202 @@ class F_CTrans(nn.Module):
         return logits, (spatial_attention_weights, temporal_attention_weights)
 
 
+class F_CTransconconcatenazione(nn.Module):
 
+    def __init__(self, num_channels, d_model, nhead, d_ff, dropout, num_layers, num_classes):
+        super().__init__()
+
+        # 1. Spatial stream
+        self.spatial_cnn = SpatialCNN(output_channels=d_model)
+        self.spatial_lpe = LearnableSpatialPositionalEncoding_LPE(num_channels, d_model)
+        self.spatial_transformer_blocks = nn.ModuleList([
+            TransformerLayer(dropout, d_model, nhead, d_ff)
+            for _ in range(num_layers)
+        ])
+
+        # 2. Temporal stream
+        self.temporal_cnn = TemporalCNN(output_channels=d_model, num_channels=num_channels)
+        self.temporal_pe = PositionalEncoding_PE(d_model, max_len=5000) 
+        self.temporal_transformer_blocks = nn.ModuleList([
+            TransformerLayer(dropout, d_model, nhead, d_ff)
+            for _ in range(num_layers)
+        ])
+
+        # 3. LayerNorm pre-fusione per bilanciare le scale numeriche dei due rami
+        # Ciascun ramo produce (d_model * 2) feature grazie alla combinazione Mean + Max Pooling
+        self.norm_spatial = nn.LayerNorm(d_model * 2)
+        self.norm_temporal = nn.LayerNorm(d_model * 2)
+        '''
+        # 4. Classifier MLP potenziato
+        # Dimensione totale concatenata = (d_model * 2 da spatial) + (d_model * 2 da temporal) = d_model * 4
+        fusion_dim = d_model * 4 
+
+        self.classifier = nn.Sequential(
+            nn.Linear(fusion_dim, d_model),
+            nn.LayerNorm(d_model),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, num_classes)
+        )
+        '''
+
+        self.classifier = nn.Linear(d_model * 4, num_classes) # Concatenate outputs from two streams
+
+   
+    def forward(self, x):
+        # Input x: (batch_size, num_channels, time_points)
+
+        # ==========================================
+        # A. RAMO SPAZIALE (Spatial Stream)
+        # ==========================================
+        x_spatial = self.spatial_cnn(x) # Output: (batch_size, num_channels, d_model)
+        x_spatial = self.spatial_lpe(x_spatial)
+
+        spatial_attention_weights = []
+        for block in self.spatial_transformer_blocks:
+            out = block(x_spatial)
+            if isinstance(out, tuple):
+                x_spatial, attn = out
+                spatial_attention_weights.append(attn)
+            else:
+                x_spatial = out
+                spatial_attention_weights.append(None)
+
+        # 🚀 MEAN + MAX POOLING SPAZIALE
+        mean_spatial = x_spatial.mean(dim=1)             # Shape: (batch_size, d_model)
+        max_spatial = x_spatial.max(dim=1)[0]             # Shape: (batch_size, d_model)
+        pooled_spatial = torch.cat([mean_spatial, max_spatial], dim=1) # Shape: (batch_size, d_model * 2)
+        pooled_spatial = self.norm_spatial(pooled_spatial)
+
+        # ==========================================
+        # B. RAMO TEMPORALE (Temporal Stream)
+        # ==========================================
+        x_temporal = self.temporal_cnn(x) # Output: (batch_size, reduced_time, d_model)
+        x_temporal = self.temporal_pe(x_temporal)
+
+        temporal_attention_weights = []
+        for block in self.temporal_transformer_blocks:
+            out = block(x_temporal)
+            if isinstance(out, tuple):
+                x_temporal, attn = out
+                temporal_attention_weights.append(attn)
+            else:
+                x_temporal = out
+                temporal_attention_weights.append(None)
+                
+        # 🚀 MEAN + MAX POOLING TEMPORALE
+        mean_temporal = x_temporal.mean(dim=1)            # Shape: (batch_size, d_model)
+        max_temporal = x_temporal.max(dim=1)[0]            # Shape: (batch_size, d_model)
+        pooled_temporal = torch.cat([mean_temporal, max_temporal], dim=1) # Shape: (batch_size, d_model * 2)
+        pooled_temporal = self.norm_temporal(pooled_temporal)
+
+        # ==========================================
+        # C. FUSIONE E CLASSIFICAZIONE
+        # ==========================================
+        # Shape finale di fused_output: (batch_size, d_model * 4)
+        fused_output = torch.cat((pooled_spatial, pooled_temporal), dim=1)
+        
+        # Passaggio nel classificatore MLP
+        logits = self.classifier(fused_output)
+
+        return logits, (spatial_attention_weights, temporal_attention_weights)
+
+class F_CTransconconcatenazioneeMLPdiverso(nn.Module):
+
+    def __init__(self, num_channels, d_model, nhead, d_ff, dropout, num_layers, num_classes):
+        super().__init__()
+
+        # 1. Spatial stream
+        self.spatial_cnn = SpatialCNN(output_channels=d_model)
+        self.spatial_lpe = LearnableSpatialPositionalEncoding_LPE(num_channels, d_model)
+        self.spatial_transformer_blocks = nn.ModuleList([
+            TransformerLayer(dropout, d_model, nhead, d_ff)
+            for _ in range(num_layers)
+        ])
+
+        # 2. Temporal stream
+        self.temporal_cnn = TemporalCNN(output_channels=d_model, num_channels=num_channels)
+        self.temporal_pe = PositionalEncoding_PE(d_model, max_len=5000) 
+        self.temporal_transformer_blocks = nn.ModuleList([
+            TransformerLayer(dropout, d_model, nhead, d_ff)
+            for _ in range(num_layers)
+        ])
+
+        # 3. LayerNorm pre-fusione per bilanciare le scale numeriche dei due rami
+        # Ciascun ramo produce (d_model * 2) feature grazie alla combinazione Mean + Max Pooling
+        self.norm_spatial = nn.LayerNorm(d_model * 2)
+        self.norm_temporal = nn.LayerNorm(d_model * 2)
+        
+        # 4. Classifier MLP potenziato
+        # Dimensione totale concatenata = (d_model * 2 da spatial) + (d_model * 2 da temporal) = d_model * 4
+        fusion_dim = d_model * 4 
+
+        self.classifier = nn.Sequential(
+            nn.Linear(fusion_dim, d_model),
+            nn.LayerNorm(d_model),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, num_classes)
+        )
+        
+
+        #self.classifier = nn.Linear(d_model * 4, num_classes) # Concatenate outputs from two streams
+
+   
+    def forward(self, x):
+        # Input x: (batch_size, num_channels, time_points)
+
+        # ==========================================
+        # A. RAMO SPAZIALE (Spatial Stream)
+        # ==========================================
+        x_spatial = self.spatial_cnn(x) # Output: (batch_size, num_channels, d_model)
+        x_spatial = self.spatial_lpe(x_spatial)
+
+        spatial_attention_weights = []
+        for block in self.spatial_transformer_blocks:
+            out = block(x_spatial)
+            if isinstance(out, tuple):
+                x_spatial, attn = out
+                spatial_attention_weights.append(attn)
+            else:
+                x_spatial = out
+                spatial_attention_weights.append(None)
+
+        # 🚀 MEAN + MAX POOLING SPAZIALE
+        mean_spatial = x_spatial.mean(dim=1)             # Shape: (batch_size, d_model)
+        max_spatial = x_spatial.max(dim=1)[0]             # Shape: (batch_size, d_model)
+        pooled_spatial = torch.cat([mean_spatial, max_spatial], dim=1) # Shape: (batch_size, d_model * 2)
+        pooled_spatial = self.norm_spatial(pooled_spatial)
+
+        # ==========================================
+        # B. RAMO TEMPORALE (Temporal Stream)
+        # ==========================================
+        x_temporal = self.temporal_cnn(x) # Output: (batch_size, reduced_time, d_model)
+        x_temporal = self.temporal_pe(x_temporal)
+
+        temporal_attention_weights = []
+        for block in self.temporal_transformer_blocks:
+            out = block(x_temporal)
+            if isinstance(out, tuple):
+                x_temporal, attn = out
+                temporal_attention_weights.append(attn)
+            else:
+                x_temporal = out
+                temporal_attention_weights.append(None)
+                
+        # 🚀 MEAN + MAX POOLING TEMPORALE
+        mean_temporal = x_temporal.mean(dim=1)            # Shape: (batch_size, d_model)
+        max_temporal = x_temporal.max(dim=1)[0]            # Shape: (batch_size, d_model)
+        pooled_temporal = torch.cat([mean_temporal, max_temporal], dim=1) # Shape: (batch_size, d_model * 2)
+        pooled_temporal = self.norm_temporal(pooled_temporal)
+
+        # ==========================================
+        # C. FUSIONE E CLASSIFICAZIONE
+        # ==========================================
+        # Shape finale di fused_output: (batch_size, d_model * 4)
+        fused_output = torch.cat((pooled_spatial, pooled_temporal), dim=1)
+        
+        # Passaggio nel classificatore MLP
+        logits = self.classifier(fused_output)
+
+        return logits, (spatial_attention_weights, temporal_attention_weights)

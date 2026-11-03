@@ -18,7 +18,7 @@ class EEGpreprocessing:
     
     def bandpassfilter(self,l_freq,h_freq,target_sfreq=160.0):
         """
-        Applying a band-pass filter to EEG signals
+        Ricampiona a 160 Hz Applying a band-pass filter to EEG signals
 
         Parameters
         ----------
@@ -60,10 +60,13 @@ class EEGpreprocessing:
         """
 
         events, event_id = mne.events_from_annotations(self.raw_filtered)
-        event_dict = {
-            "Left": event_id["T1"],
-            "Right": event_id["T2"]
-        }
+
+        event_dict = {}
+        if "T1" in event_id:
+            event_dict["Left"] = event_id["T1"]
+        if "T2" in event_id:
+            event_dict["Right"] = event_id["T2"]
+        
 
         epochs = mne.Epochs(
             self.raw_filtered,          

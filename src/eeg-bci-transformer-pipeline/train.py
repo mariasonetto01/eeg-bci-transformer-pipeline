@@ -120,7 +120,7 @@ class EEGTrainer:
 
             if scheduler is not None:
                 if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_loss)  # ReduceLROnPlateau esige la validation loss
+                    scheduler.step(val_acc) 
                 else:
                     scheduler.step()       
             
@@ -205,7 +205,7 @@ class EEGTrainer:
 
             if scheduler is not None:
                 if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_loss)  # ReduceLROnPlateau esige la validation loss
+                    scheduler.step(val_acc)  # ReduceLROnPlateau esige la validation loss
                 else:
                     scheduler.step()       
             

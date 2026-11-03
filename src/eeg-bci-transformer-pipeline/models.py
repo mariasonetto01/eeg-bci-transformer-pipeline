@@ -321,7 +321,7 @@ class F_CTrans(nn.Module):
         return logits, (spatial_attention_weights, temporal_attention_weights)
 
 
-class F_CTrans_modify(nn.Module):
+class F_CTrans_modified(nn.Module):
 
     def __init__(self, num_channels, d_model, nhead, d_ff, dropout, num_layers, num_classes):
         super().__init__()

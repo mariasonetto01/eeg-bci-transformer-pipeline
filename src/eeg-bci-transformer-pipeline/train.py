@@ -116,7 +116,6 @@ class EEGTrainer:
         epoch_acc = correct / total
         return epoch_loss, epoch_acc
 
-
     def evaluate(self, val_loader):
         """
         Evaluates the model on the validation or test dataset.
@@ -136,29 +135,30 @@ class EEGTrainer:
         eval_acc : float
             Average classification accuracy (ranging from 0.0 to 1.0).
         """
-
+        # Set the model to evaluation mode 
         self.model.eval()  
         running_loss = 0.0
         correct = 0
         total = 0
 
+        # Disable gradient calculation
         with torch.no_grad():  
             for x_batch, y_batch in val_loader:
                 x_batch = x_batch.to(self.device)
                 y_batch = y_batch.to(self.device)
 
-               
-                outputs = self.model(x_batch) # Forward
+                # Forward pass
+                outputs = self.model(x_batch) 
 
                 if isinstance(outputs, tuple):
                     outputs = outputs[0]
 
-                    
-                loss = self.criterion(outputs, y_batch) # Loss
+                # Compute loss for the current batch
+                loss = self.criterion(outputs, y_batch) 
                 running_loss += loss.item()
 
-                
-                preds = torch.argmax(outputs, dim=1) # Accuracy
+                # Compute batch accuracy
+                preds = torch.argmax(outputs, dim=1) 
                 correct += (preds == y_batch).sum().item()
                 total += y_batch.size(0)
 
@@ -166,10 +166,34 @@ class EEGTrainer:
         eval_acc = correct / total
 
         return eval_loss, eval_acc
-
-  
     
     def train_and_validate(self, train_loader, val_loader, epochs, scheduler=None):
+        """
+        Manages the full training and validation lifecycle across multiple epochs, incorporating early stopping and best-weight checkpointing.
+
+        Parameters
+        ----------
+        train_loader : torch.utils.data.DataLoader
+            Training set data loader.
+        val_loader : torch.utils.data.DataLoader
+            Validation set data loader.
+        epochs : int
+            Maximum number of epochs to train.
+        scheduler : torch.optim.lr_scheduler, optional
+            Learning rate scheduler.
+
+        Returns
+        -------
+        best_val_acc : float
+            The highest validation accuracy achieved during training.
+        train_losses : list of float
+            History of training losses per epoch.
+        val_losses : list of float
+            History of validation losses per epoch.
+        val_accuracies : list of float
+            History of validation accuracies per epoch.
+        """
+
         train_losses = []
         val_losses   = []
         val_accuracies = []
@@ -180,10 +204,10 @@ class EEGTrainer:
         early_stopper = EarlyStopper(patience=200, min_delta=1e-4)
 
         for epoch in range(epochs):
-            # TRAIN 
+            # Training phase
             train_loss, train_acc = self.train(train_loader)
     
-            # VALIDATION 
+            # Validation phase
             val_loss, val_acc = self.evaluate(val_loader)
 
             if scheduler is not None:
@@ -191,112 +215,31 @@ class EEGTrainer:
                     scheduler.step(val_acc) 
                 else:
                     scheduler.step()       
-            
-            # Tentativo sicuro di recuperare il learning rate corrente senza far crashare il codice
+
+            # Safely retrieve and log current learning rate
             try:
                 current_lr = self.optimizer.param_groups[0]['lr']
                 print(f"Epoch {epoch+1:02d}/{epochs:02d}: train_loss={train_loss:.5f}, train_acc={train_acc * 100:.2f}%, val_loss={val_loss:.5f}, val_acc={val_acc * 100:.2f}% | LR: {current_lr:.6f}")
             except Exception:
-                current_lr = 0.001  # Fallback
+                current_lr = 0.001  #Fallback value
                         
             train_losses.append(train_loss)
             val_losses.append(val_loss)
             val_accuracies.append(val_acc)
 
-            # Salviamo i pesi se l'Accuracy di Validazione migliora
+            # Save model weights if validation accuracy improves
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 best_model_weights = copy.deepcopy(self.model.state_dict())
-    
+
+            # Check early stopping condition
             if early_stopper.early_stop(val_loss):
                 print(f"Early stopping all'epoca {epoch+1}")
                 break
-          
-        self.model.load_state_dict(best_model_weights) # Re-inietta i pesi migliori
 
+        # Restore the best performing model weights
+        self.model.load_state_dict(best_model_weights) 
+        
         return best_val_acc, train_losses, val_losses, val_accuracies
 
 
-    def train_gradient(self, train_loader, max_grad_norm=1.0):    
-        """Train the model with gradient clipping and compute training loss and accuracy."""
-        self.model.train() 
-        running_loss = 0.0
-        correct = 0
-        total = 0
-
-        for x_batch, y_batch in train_loader:
-            x_batch = x_batch.to(self.device)
-            y_batch = y_batch.to(self.device)
-
-            self.optimizer.zero_grad() # Azzero i gradienti
-
-            outputs = self.model(x_batch) # Forward
-
-            if isinstance(outputs, tuple):
-                outputs = outputs[0]
-
-            loss = self.criterion(outputs, y_batch) # Loss
-
-            loss.backward() # Backpropagation
-
-            if max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_grad_norm)
-            self.optimizer.step() # Update dei pesi
-            
-            running_loss += loss.item() 
-
-            # Calcolo accuracy di training per il batch
-            preds = torch.argmax(outputs, dim=1)
-            correct += (preds == y_batch).sum().item()
-            total += y_batch.size(0)
-
-        epoch_loss = running_loss / len(train_loader)
-        epoch_acc = correct / total
-        return epoch_loss, epoch_acc
-
-    def train_and_validate_gradient(self, train_loader, val_loader, epochs, scheduler=None, max_grad_norm=1.0):
-        train_losses = []
-        val_losses   = []
-        val_accuracies = []
-        
-        best_val_acc = 0.0
-        best_model_weights = copy.deepcopy(self.model.state_dict())
-        
-        early_stopper = EarlyStopper(patience=10, min_delta=1e-4)
-
-        for epoch in range(epochs):
-            # TRAIN 
-            train_loss, train_acc = self.train_gradient(train_loader, max_grad_norm=max_grad_norm)
-    
-            # VALIDATION 
-            val_loss, val_acc = self.evaluate(val_loader)
-
-            if scheduler is not None:
-                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_acc)  # ReduceLROnPlateau esige la validation loss
-                else:
-                    scheduler.step()       
-            
-            # Tentativo sicuro di recuperare il learning rate corrente senza far crashare il codice
-            try:
-                current_lr = self.optimizer.param_groups[0]['lr']
-                print(f"Epoch {epoch+1:02d}/{epochs:02d}: train_loss={train_loss:.5f}, train_acc={train_acc * 100:.2f}%, val_loss={val_loss:.5f}, val_acc={val_acc * 100:.2f}% | LR: {current_lr:.6f}")
-            except Exception:
-                current_lr = 0.001  # Fallback
-        
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-            val_accuracies.append(val_acc)
-
-            # Salviamo i pesi se l'Accuracy di Validazione migliora
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                best_model_weights = copy.deepcopy(self.model.state_dict())
-    
-            if early_stopper.early_stop(val_loss):
-                print(f"Early stopping all'epoca {epoch+1}")
-                break
-      
-        self.model.load_state_dict(best_model_weights) # iniettare nuovamente i pesi "congelati" nel modello 
-
-        return best_val_acc, train_losses, val_losses, val_accuracies

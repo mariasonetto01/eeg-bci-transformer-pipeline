@@ -14,7 +14,7 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, q, k, v):
-        '''rr
+        """
         Executes the forward pass for Scaled Dot-Product Attention.
 
         Parameters
@@ -32,22 +32,29 @@ class ScaledDotProductAttention(nn.Module):
             Context vectors weighted by attention, shape (Batch, nhead, Seq_Len, d_k).
         attn_weights : torch.Tensor
             Attention weight matrices, shape (Batch, nhead, Seq_Len, Seq_Len).
-        '''
+        """
         
         d_k = q.size(-1)
 
-        # k.transpose(-2, -1) scambia le ultime due dimensioni per fare il prodotto matriciale
+        # Compute scaled dot-product attention scores
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
-        
-        #attn_weights = torch.softmax(scores, dim=-1)
 
+        # Apply softmax and dropout to obtain attention weights
+        attn_weights = torch.softmax(scores, dim=-1)
         attn_weights = self.dropout(torch.softmax(scores, dim=-1))
+
+        # Compute the final context vector output
         output = torch.matmul(attn_weights, v)
 
         return output, attn_weights
 
 
 class MultiHeadAttention(nn.Module):
+    """
+    Multi-Head Attention module projecting inputs into multiple subspaces 
+    to capture diverse contextual relationships.
+    """
+    
     def __init__(self, d_model=128, nhead=8, dropout=0.1):
         super().__init__()
         assert d_model % nhead == 0, "d_model deve essere divisibile per nhead"
@@ -64,35 +71,42 @@ class MultiHeadAttention(nn.Module):
         
         self.attention = ScaledDotProductAttention(dropout)
         
-    def forward(self, x):  #x che do sarebbe x_embed che ho alla fine di s-trans ad esmpio 
+    def forward(self, x):  
+        """
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (Batch, Seq_Len, d_model).
+        """
+
         # x shape: (Batch, Seq_Len, d_model)
         batch_size, seq_len, _ = x.size()
 
-        #Linear projections
-        q = self.w_q(x) # (Batch, Seq_Len, d_model)
-        k = self.w_k(x) # (Batch, Seq_Len, d_model)
-        v= self.w_v(x) # (Batch, Seq_Len, d_model)
+        #Linear projections for Query, Key, and Value
+        q = self.w_q(x)  # Shape : (Batch, Seq_Len, d_model)
+        k = self.w_k(x)  # Shape : (Batch, Seq_Len, d_model)
+        v= self.w_v(x)   # Shape : (Batch, Seq_Len, d_model)
 
-        #split into heads; (Batch, Seq_Len, d_model) --> (Batch, nhead, Seq_Len, d_k)
+       # Split dimensions to separate heads: (Batch, Seq_Len, d_model) -> (Batch, nhead, Seq_Len, d_k)
         q = q.view(batch_size, seq_len, self.nhead, self.d_k).transpose(1, 2)
         k = k.view(batch_size, seq_len, self.nhead, self.d_k).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.nhead, self.d_k).transpose(1, 2)
 
-        # Apply attention
-        out, attn_weights = self.attention(q, k, v) #shape (Batch, nhead, Seq_Len, d_k)
+        # Apply scaled dot-product attention across heads
+        out, attn_weights = self.attention(q, k, v) # Shape : (Batch, nhead, Seq_Len, d_k)
         
-        # Concatenate heads
-        out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)  # shape(Batch, Seq_Len, d_model)
+        # Concatenate heads back together: (Batch, nhead, Seq_Len, d_k) -> (Batch, Seq_Len, d_model)
+        out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)  # Shape : (Batch, Seq_Len, d_model)
         
-        # FASE 5: Proiezione di output finale
-        # out ha forma: (Batch, Seq_Len, d_model)
+        # Final linear output projection
         output = self.w_out(out)
         
         return output, attn_weights
 
 class FeedForward(nn.Module):
-    '''
-    '''
+    """
+    Position-wise Feed-Forward Network (FFN) composed of two linear transformations with a ReLU activation and dropout in between.
+    """
 
     def __init__(self, d_model, d_ff, dropout):
         super().__init__()
@@ -101,7 +115,10 @@ class FeedForward(nn.Module):
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self,x): #x shape in input: (Batch, Seq_Len, d_model)
+    def forward(self,x): 
+        """
+        Input shape: (Batch, Seq_Len, d_model)
+        """
 
         x = self.w_1(x) # Shape (batch, Seq_Len, d_ff)
         x = torch.relu(x) # Shape (batch, Seq_Len, d_ff)
@@ -111,12 +128,12 @@ class FeedForward(nn.Module):
         return x # Shape (batch, Seq_Len, d_model)
 
 class TransformerLayer(nn.Module):
-    '''
-    '''
+    """
+    Standard Transformer Encoder Layer combining Multi-Head Self-Attention and a Feed-Forward Network with Residual Connections and Layer Normalization.
+    """
 
     def __init__(self, dropout, d_model=128, nhead=8, d_ff=512):
         super().__init__()
-        #self.dropout=dropout
 
         self.self_attention = MultiHeadAttention(d_model=d_model, nhead=nhead, dropout=dropout)
         self.ffn = FeedForward( d_model=d_model, d_ff=d_ff, dropout=dropout)
@@ -127,28 +144,26 @@ class TransformerLayer(nn.Module):
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
 
-    def forward(self,x): # x shape in input: (Batch, Seq_Len, d_model)
+    def forward(self,x):
+        """
+        Input shape: (Batch, Seq_Len, d_model)
+        """
 
+        # Sub-layer 1: Self-Attention + Residual + LayerNorm
         attn_out, attn_weights = self.self_attention(x)
         x = self.norm1(x + self.drop1(attn_out))
 
+        # Sub-layer 2: Feed-Forward + Residual + LayerNorm
         ffn_out = self.ffn(x)
-        x = self.norm2(x + self.drop2(ffn_out)) #Shape  (Batch, Seq_Len, d_model)
+        x = self.norm2(x + self.drop2(ffn_out))  # x Shape : (Batch, Seq_Len, d_model)
 
         return x, attn_weights 
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import math
 
 
 class SpatialCNN(nn.Module):
     """
-    Ramo s-CTrans (Spatial/Temporal CNN Module):
-    1. Conv2D (1x16,SAME padding) -> Conv temporale
-    2. AvgPool2D (1x32)
-    3. Conv2D (1x15, VALID padding)
+    Spatial CNN module (s-CTrans stream):
+    Extracts spatial representations across EEG channels using convolutional layers.
     """
     def __init__(self, output_channels= 64):
         super().__init__()
@@ -161,9 +176,11 @@ class SpatialCNN(nn.Module):
 
 
     def forward(self, x):
-        # x: (batch_size, num_channels, time_points)
-       
-        x = x.unsqueeze(1) # Unsqueeze to add a channel dimension for Conv2d that need 4 dimensions
+        """
+        Input x shape: (batch_size, num_channels, time_points)
+        """
+       # Add a channel dimension for Conv2d (requires 4 dimensions: Batch, Channels, Height, Width)
+        x = x.unsqueeze(1) 
 
         x = self.conv1(x) # Shape (batch_size, out_channels, num_channels, time_points)
         x = self.relu(x) # Shape (batch_size, out_channels, num_channels, time_points)
@@ -174,45 +191,42 @@ class SpatialCNN(nn.Module):
         x = self.relu(x) # Shape (batch_size, out_channels, num_channels, (time_points/32)-15))
 
 
-
-
-        # Faccio il seguente reshape per avere le dimensioni da poter usare con Pytorch
+        # Reshape/permute dimensions to map features into a structure suitable for sequential modeling
         x = x.permute(0, 2, 1, 3) # Shape: (batch_size, num_channels, out_channels, reduced_time)
-        
-        x = x.mean(dim=-1) # Shape finale: (batch_size, num_channels, out_channels) 
+        x = x.mean(dim=-1) # Average over the time dimension
 
         return x # Shape (batch_size, out_channels, num_channels, reduced_time=(time_points/32)-15))
 
 
 
-class TemporalCNN(nn.Module): #Da migliorare
+class TemporalCNN(nn.Module): 
     """
-         Ramo t-CTrans (Temporal/Spatial CNN Module):
-           1. Conv2D (C x 1, SAME padding) -> Conv spaziale tra tutti i canali EEG
-           2. AvgPool2D (1 x 8)
-           3. Trasposizione features
+    Temporal CNN module (t-CTrans stream):
+    Extracts temporal representations along the time axis of EEG signals.
     """
+
     def __init__(self , output_channels= 64, num_channels =64):
         super().__init__()
         
-        self.conv1 = nn.Conv2d(in_channels=1 , out_channels=output_channels, kernel_size=(num_channels, 1), padding=0) #ho messo padding = 0 perchè altrimenti avrei avuto in posizione 2 64 e non 1 e il squuezee 2 non avrebbe fatto nietne
+        self.conv1 = nn.Conv2d(in_channels=1 , out_channels=output_channels, kernel_size=(num_channels, 1), padding=0) #ho messo padding = 0 perchè altrimenti avrei avuto in posizione 2 64 e non 1 e il squezee 2 non avrebbe fatto nietne
         self.pool1 = nn.AvgPool2d(kernel_size=(1, 8))
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        # x: (batch_size, num_channels, time_points)
+        """
+        Input x shape: (batch_size, num_channels, time_points)
+        """
        
-        x = x.unsqueeze(1) # Unsqueeze to add a channel dimension for Conv2d that need 4 dimensions
+        x = x.unsqueeze(1) #  Shape: (batch_size, 1, num_channels, time_points)
+        
 
         x = self.conv1(x) # Shape (batch_size, 1, num_channels, time_points)
         x = self.relu(x) # Shape (batch_size, out_channels, num_channels, time_points)
-
         x = self.pool1(x) # Shape (batch_size, out_channels, num_channels, reduced_time= (time_points/8))
 
-       
-
+        #iprendidaqui
+        # Squeeze the collapsed spatial dimension and permute for sequence modeling
         x = x.squeeze(2) # Shape (batch_size, out_channels, reduced_time)
-
         x = x.permute(0, 2, 1) # (batch_size, reduced_time, out_channels)
       
 

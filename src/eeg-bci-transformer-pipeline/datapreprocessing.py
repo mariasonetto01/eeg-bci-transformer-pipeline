@@ -4,8 +4,11 @@ import torch
 from torch.utils.data import Dataset
 
 class EEGpreprocessing:
+
     """
-    EEG preprocessing pipeline 
+
+    Pipeline for EEG signal preprocessing, including resampling,band-pass filtering, epoch extraction, and normalization.   
+    
     """
     
     def __init__(self,raw):
@@ -18,17 +21,23 @@ class EEGpreprocessing:
     
     def bandpassfilter(self,l_freq,h_freq,target_sfreq=160.0):
         """
-        Ricampiona a 160 Hz Applying a band-pass filter to EEG signals
+      
+        Resamples the raw EEG signal to a uniform sampling frequency and applies a band-pass filter.
 
         Parameters
         ----------
         l_freq : float
-            Lower band-pass frequency 
+            Lower cut-off frequency of the band-pass filter (in Hz).
         h_freq : float
-            Upper band-pass frequency
-        target_sfreq : float
-            resamples signal to 160 Hz to ensure uniform length  across all files 
+            Upper cut-off frequency of the band-pass filter (in Hz).
+        target_sfreq : float, optional
+            Target sampling frequency to ensure uniform length across files (default: 160.0 Hz).
     
+        Returns
+        -------
+        raw_filtered : mne.io.Raw
+            The processed MNE Raw object after resampling and filtering.
+        
         """
 
         raw_filtered = self.raw.copy()
@@ -48,7 +57,27 @@ class EEGpreprocessing:
 
         return raw_filtered
 
-    def epoching(self,tmin,tmax): #T1 e T2 non sono sempre left e right, dipende dal numero del run, per la classificazione L/R che prenso di fare io ok
+    def epoching(self,tmin,tmax): 
+
+        """
+        Extracts target epochs from the filtered EEG signals based on task annotations.
+
+        Note: Specifically designed for motor imagery runs (e.g., runs 4, 8, and 12), 
+        where the annotations 'T1' and 'T2' correspond to Left and Right hand motor imagery, respectively.
+
+        Parameters
+        ----------
+        tmin : float
+            Start time before cue onset (in seconds).
+        tmax : float
+            End time after cue onset (in seconds).
+    
+        Returns
+        -------
+        epochs : mne.Epochs
+            The extracted epochs containing only Left and Right classes.
+        """
+
         """
         Extracts target epochs from filtered EEG signals based on task annotations.
 
@@ -83,73 +112,36 @@ class EEGpreprocessing:
         self.epochs = epochs
 
         return epochs
+    
+   
+class EEGDataset(Dataset): 
     '''
-    def normalize_conrumore(self, alpha=0.01, eps=0): #1e-8
+
+    Custom PyTorch Dataset for EEG data, designed to be generically reusable across training, validation, and test sets.
+
+    '''
+
+    def __init__(self, data, labels):
         """
-        Applica la normalizzazione Z-score globale e aggiunge rumore casuale 
-        secondo la formula: X* = (X - mu) / delta + alpha * N.
+        Initializes the dataset by converting NumPy arrays into PyTorch tensors.
 
         Parameters
         ----------
-        alpha : float
-            Fattore di controllo per la percentuale di rumore casuale (default 0.01)[cite: 2].
-        eps : float
-            Piccola costante per evitare la divisione per zero.
+        data : np.ndarray
+            The input EEG epochs feature data.
+        labels : np.ndarray
+            The corresponding class labels.
+
         """
-        # Estrae i dati dalle epoche
-        X = self.epochs.get_data(copy=True)
-
-        # Calcola media e deviazione standard globali dei dati
-        mean = np.mean(X)
-        std = np.std(X)
-
-        # Normalizzazione Z-score
-        normalized_data = (X - mean) / (std + eps)
-
-        # Genera rumore casuale N con distribuzione normale standard
-        noise = alpha * np.random.randn(*normalized_data.shape)
-
-        # Aggiunge il rumore
-        X_norm = normalized_data + noise
-
-        self.X_normalized = X_norm
-        
-        return X_norm
-
-    def normalize(self,axis=-1,eps=1e-8):
-        """
-        Applies Z-Score normalization (mean=0, std=1) to the extracted epochs data.
-
-        Parameters
-         ----------
-        axis : int or tuple
-            Axis or axes along which the mean and std are computed. Default is -1 (time axis).
-        eps : float
-            Small constant to prevent division by zero. Default is 1e-8.
-        """
-        X = self.epochs.get_data(copy=True)
-
-        mean = np.mean(X, axis=axis, keepdims=True)
-        std = np.std(X, axis=axis, keepdims=True)
-
-        X_norm = (X - mean) / (std + eps)
-
-        self.X_normalized = X_norm
-        
-        return X_norm
-
-'''
-class EEGDataset(Dataset): #posso definirlo in maniera generica così lo posso riutilizzare per trainingset,testset e validationset 
-
-    def __init__(self, data, labels):
-        """Convert to PyTorch tensors"""
         
         self.x = torch.from_numpy(data).float()
         self.y = torch.from_numpy(labels).long()
 
 
     def __getitem__(self, idx):
-        '''  # Estrai la finestra temporale e l'etichetta corrispondente'''
+        """
+        Retrieves the sample and its corresponding label at the specified index.
+        """
 
         sample_x = self.x[idx]
         sample_y = self.y[idx]
@@ -157,6 +149,9 @@ class EEGDataset(Dataset): #posso definirlo in maniera generica così lo posso r
         return sample_x, sample_y
 
     def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        """
         len_x=len(self.x)
 
         return len_x

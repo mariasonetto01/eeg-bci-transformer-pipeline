@@ -73,33 +73,8 @@ class EEGTrainer:
         epoch_acc = correct / total
         return epoch_loss, epoch_acc
 
-    def evaluate(self, val_loader):
-        self.model.eval()  
-        running_loss = 0.0
-        correct = 0
-        total = 0
 
-        with torch.no_grad():  
-            for x_batch, y_batch in val_loader:
-                x_batch = x_batch.to(self.device)
-                y_batch = y_batch.to(self.device)
-
-                outputs = self.model(x_batch) # Forward
-
-                if isinstance(outputs, tuple):
-                    outputs = outputs[0]
-                    
-                loss = self.criterion(outputs, y_batch) # Loss
-                running_loss += loss.item()
-
-                preds = torch.argmax(outputs, dim=1) # Accuracy
-                correct += (preds == y_batch).sum().item()
-                total += y_batch.size(0)
-
-        eval_loss = running_loss / len(val_loader)
-        eval_acc = correct / total
-
-        return eval_loss, eval_acc
+  
     
     def train_and_validate(self, train_loader, val_loader, epochs, scheduler=None):
         train_losses = []

@@ -201,7 +201,7 @@ class EEGTrainer:
         best_val_acc = 0.0
         best_model_weights = copy.deepcopy(self.model.state_dict())
         
-        early_stopper = EarlyStopper(patience=200, min_delta=1e-4)
+        early_stopper = EarlyStopper(patience=50, min_delta=1e-4)
 
         for epoch in range(epochs):
             # Training phase
@@ -241,5 +241,81 @@ class EEGTrainer:
         self.model.load_state_dict(best_model_weights) 
         
         return best_val_acc, train_losses, val_losses, val_accuracies
+
+    def train_and_validate_patience(self, train_loader, val_loader, epochs, patience ,scheduler=None):
+        """
+        Manages the full training and validation lifecycle across multiple epochs, incorporating early stopping and best-weight checkpointing.
+
+        Parameters
+        ----------
+        train_loader : torch.utils.data.DataLoader
+            Training set data loader.
+        val_loader : torch.utils.data.DataLoader
+            Validation set data loader.
+        epochs : int
+            Maximum number of epochs to train.
+        scheduler : torch.optim.lr_scheduler, optional
+            Learning rate scheduler.
+
+        Returns
+        -------
+        best_val_acc : float
+            The highest validation accuracy achieved during training.
+        train_losses : list of float
+            History of training losses per epoch.
+        val_losses : list of float
+            History of validation losses per epoch.
+        val_accuracies : list of float
+            History of validation accuracies per epoch.
+        """
+
+        train_losses = []
+        val_losses   = []
+        val_accuracies = []
+        
+        best_val_acc = 0.0
+        best_model_weights = copy.deepcopy(self.model.state_dict())
+        
+        early_stopper = EarlyStopper(patience=patience, min_delta=1e-4)
+
+        for epoch in range(epochs):
+            # Training phase
+            train_loss, train_acc = self.train(train_loader)
+    
+            # Validation phase
+            val_loss, val_acc = self.evaluate(val_loader)
+
+            if scheduler is not None:
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(val_acc) 
+                else:
+                    scheduler.step()       
+
+            # Safely retrieve and log current learning rate
+            try:
+                current_lr = self.optimizer.param_groups[0]['lr']
+                print(f"Epoch {epoch+1:02d}/{epochs:02d}: train_loss={train_loss:.5f}, train_acc={train_acc * 100:.2f}%, val_loss={val_loss:.5f}, val_acc={val_acc * 100:.2f}% | LR: {current_lr:.6f}")
+            except Exception:
+                current_lr = 0.001  #Fallback value
+                        
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            val_accuracies.append(val_acc)
+
+            # Save model weights if validation accuracy improves
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_model_weights = copy.deepcopy(self.model.state_dict())
+
+            # Check early stopping condition
+            if early_stopper.early_stop(val_loss):
+                print(f"Early stopping all'epoca {epoch+1}")
+                break
+
+        # Restore the best performing model weights
+        self.model.load_state_dict(best_model_weights) 
+        
+        return best_val_acc, train_losses, val_losses, val_accuracies
+
 
 

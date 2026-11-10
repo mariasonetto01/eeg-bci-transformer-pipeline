@@ -4,11 +4,8 @@ import torch
 from torch.utils.data import Dataset
 
 class EEGpreprocessing:
-
     """
-
     Pipeline for EEG signal preprocessing, including resampling,band-pass filtering, epoch extraction, and normalization.   
-    
     """
     
     def __init__(self,raw):
@@ -20,8 +17,7 @@ class EEGpreprocessing:
  
     
     def bandpassfilter(self,l_freq,h_freq,target_sfreq=160.0):
-        """
-      
+        """ 
         Resamples the raw EEG signal to a uniform sampling frequency and applies a band-pass filter.
 
         Parameters
@@ -58,7 +54,6 @@ class EEGpreprocessing:
         return raw_filtered
 
     def epoching(self,tmin,tmax): 
-
         """
         Extracts target epochs from the filtered EEG signals based on task annotations.
 
@@ -76,16 +71,6 @@ class EEGpreprocessing:
         -------
         epochs : mne.Epochs
             The extracted epochs containing only Left and Right classes.
-        """
-
-        """
-        Extracts target epochs from filtered EEG signals based on task annotations.
-
-        tmin : float
-            Start time before cue onset (in seconds).
-        tmax : float
-            End time after cue onset (in seconds).
-    
         """
 
         events, event_id = mne.events_from_annotations(self.raw_filtered)
@@ -115,11 +100,9 @@ class EEGpreprocessing:
     
    
 class EEGDataset(Dataset): 
-    '''
-
+    """
     Custom PyTorch Dataset for EEG data, designed to be generically reusable across training, validation, and test sets.
-
-    '''
+    """
 
     def __init__(self, data, labels):
         """

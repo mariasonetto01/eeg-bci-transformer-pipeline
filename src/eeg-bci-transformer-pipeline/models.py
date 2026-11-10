@@ -48,7 +48,6 @@ class ScaledDotProductAttention(nn.Module):
 
         return output, attn_weights
 
-
 class MultiHeadAttention(nn.Module):
     """
     Multi-Head Attention module projecting inputs into multiple subspaces 
@@ -159,7 +158,6 @@ class TransformerLayer(nn.Module):
 
         return x, attn_weights 
 
-
 class SpatialCNN(nn.Module):
     """
     Spatial CNN module (s-CTrans stream):
@@ -197,8 +195,6 @@ class SpatialCNN(nn.Module):
 
         return x # Shape (batch_size, out_channels, num_channels, reduced_time=(time_points/32)-15))
 
-
-
 class TemporalCNN(nn.Module): 
     """
     Temporal CNN module (t-CTrans stream):
@@ -233,7 +229,6 @@ class TemporalCNN(nn.Module):
       
 
         return x  # Shape (batch_size, seq_len_t, out_channels)
-
 
 class PositionalEncoding_PE(nn.Module):
     """
@@ -346,7 +341,6 @@ class F_CTrans(nn.Module):
         logits = self.classifier(fused_output)
 
         return logits, (spatial_attention_weights, temporal_attention_weights)
-
 
 class F_CTrans_modified(nn.Module):
     """

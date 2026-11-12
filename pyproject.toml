@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eeg-bci-transformer-pipeline"
+dynamic = ["version"]
+description = "EEG BCI Transformer Pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Maria Sonetto", email = "m.sonetto@studenti.unipi.it" }
+]
+dependencies = [
+  "numpy",
+  "torch",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "mne",
+  "matplotlib",
+  "seaborn",
+  "scipy"
+  ]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "nox",
+]
+docs = [
+  "sphinx",
+  "sphinxawesome-theme",
+]
+
+[project.urls]
+Homepage = "https://github.com/mariasonetto01/eeg-bci-transformer-pipeline"
+Issues = "https://github.com/mariasonetto01/eeg-bci-transformer-pipeline/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eeg_bci_transformer_pipeline"]
+
+[tool.hatch.version]
+path = "src/eeg_bci_transformer_pipeline/_version.py"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src"]
+exclude = ["docs", "notebook"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # errori di stile (pycodestyle)
+  "F",    # errori logici / import inutilizzati (pyflakes)
+  "I",    # ordinamento automatico degli import (isort)
+  "B",    # bug comuni e anti-pattern (flake8-bugbear)
+  "UP",   # sintassi Python moderna (pyupgrade)
+  "SIM",  # semplificazione del codice (flake8-simplify)
+  "C4",   # ottimizzazione comprehension (flake8-comprehensions)
+  "NPY",  # best practice per NumPy
+  "PERF", # ottimizzazioni di performance
+]
+ignore = [
+  "C408"
+]
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = [
+  "missing-docstring",
+  "too-few-public-methods",
+  "too-many-arguments",
+  "too-many-positional-arguments",
+  "too-many-instance-attributes",
+  "too-many-locals",
+  "use-dict-literal",
+  ]
+
+[tool.pylint.'BASIC']
+good-names = ["i", "j", "k", "x", "y", "z"]
+
+[tool.pylint.'FORMAT']
+max-line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

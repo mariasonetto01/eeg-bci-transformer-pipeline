@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from train import EarlyStopper, EEGTrainer  
+from eeg_bci_transformer_pipeline.train import EarlyStopper, EEGTrainer  
 
 class DummyModel(nn.Module):
     """
@@ -11,11 +11,11 @@ class DummyModel(nn.Module):
 
     def __init__(self, num_classes=2):
         super().__init__()
-        self.linear = nn.Linear(10, num_classes)
-        
+        self.linear = nn.Linear(3, num_classes)
+
     def forward(self, x):
-        # Reduces the input tensor (batch_size, num_channels, time_points) to (batch_size, 10)
-        x = x.mean(dim=[1, 2]) if x.dim() > 2 else x
+        # Reduces (batch_size, num_channels=3, time_points=32) to (batch_size, 3)
+        x = x.mean(dim=-1) if x.dim() > 2 else x
         return self.linear(x)
 
 @pytest.fixture

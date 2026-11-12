@@ -1,6 +1,6 @@
 import pytest
 import torch
-from models import (
+from eeg_bci_transformer_pipeline.models import (
     ScaledDotProductAttention,
     MultiHeadAttention,
     FeedForward,
@@ -17,9 +17,9 @@ from models import (
 def dummy_eeg_input():
     """
     Creates a dummy EEG input batch.
-    Shape: (batch_size=4, num_channels=3, time_points=320)
+    Shape: (batch_size=4, num_channels=3, time_points=1000)
     """
-    return torch.randn(4, 3, 320)
+    return torch.randn(4, 3, 1000)
 
 def test_scaled_dot_product_attention():
     """

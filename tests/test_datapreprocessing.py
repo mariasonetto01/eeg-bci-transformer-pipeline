@@ -2,7 +2,7 @@ import numpy as np
 import mne
 import pytest
 import torch
-from datapreprocessing import EEGpreprocessing, EEGDataset
+from eeg_bci_transformer_pipeline.datapreprocessing import EEGpreprocessing, EEGDataset
 
 @pytest.fixture
 def dummy_raw():
@@ -42,12 +42,10 @@ def test_bandpassfilter(dummy_raw):
     target_sfreq = 160.0
     preprocessor = EEGpreprocessing(dummy_raw)
     
-    raw_filtered = preprocessor.bandpassfilter(l_freq=1.0, h_freq=40.0, target_sfreq=target_sfreq)
+    raw_filtered = preprocessor.bandpassfilter(l_freq=0.5, h_freq=40.0, target_sfreq=target_sfreq)
     
-    # Integrity assertions
     assert preprocessor.raw_filtered is not None
-    assert isinstance(raw_filtered, mne.io.Raw)
-    # Ensure sampling frequency was updated to the target frequency
+    assert isinstance(raw_filtered, mne.io.BaseRaw)
     assert raw_filtered.info['sfreq'] == target_sfreq
 
 def test_epoching(dummy_raw):

@@ -138,6 +138,6 @@ class EEGDataset(Dataset):
         len_x=len(self.x)
 
         return len_x
-    
+
 
 

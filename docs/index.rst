@@ -6,8 +6,8 @@ built on `PyTorch <https://pytorch.org/>`_ and `MNE-Python <https://mne.tools/>`
 designed for **binary Motor Imagery (MI) EEG classification (left hand vs. right hand)** in
 Brain-Computer Interface (BCI) applications.
 
-The entire workflow—from EEG preprocessing and epoch extraction to model training and
-evaluation—is built around binary MI decoding. Within this shared binary pipeline, the project
+The entire workflow, from EEG preprocessing and epoch extraction to model training and
+evaluation, is built around binary MI decoding. Within this shared binary pipeline, the project
 reproduces the **F_CTrans** architecture proposed by *Jin Xie et al. ("A Transformer-Based
 Approach Combining Deep Learning Network and Spatial-Temporal Information for Raw EEG
 Classification", IEEE TNSRE, 2022)* alongside a **modified architectural variant** of the same

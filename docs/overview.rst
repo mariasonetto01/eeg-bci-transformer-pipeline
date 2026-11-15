@@ -1,5 +1,5 @@
-Project Overview & Quickstart
-=============================
+Project Overview 
+================
 
 Scientific Context
 ------------------

@@ -6,13 +6,27 @@ The entire workflow, from EEG preprocessing and epoch extraction to model traini
 
 ---
 
+## Dataset
+
+The project uses the **[PhysioNet EEG Motor Movement/Imagery Dataset](https://doi.org/10.13026/C28G6P)** (Schalk, 2009):
+- 109 subjects (Motor Imagery runs: `4, 8, and 12`)
+- 64-channel EEG recordings
+- Motor Imagery tasks (imagined left- vs. right-hand movement)
+- Binary classification: Left Hand (`T1`) vs. Right Hand (`T2`)
+- Sampling frequency: `160 Hz` (uniformly resampled)
+- Data duration: Cue-locked epochs extracted from `tmin` to `tmax` (`4s` windows)
+
+> **Dataset Citation:** Schalk, G. (2009). *EEG Motor Movement/Imagery Dataset* (version 1.0.0). PhysioNet. RRID:SCR_007345. [https://doi.org/10.13026/C28G6P](https://doi.org/10.13026/C28G6P)
+
+---
+
 ## Project Structure
 
 ```text
 eeg-bci-transformer-pipeline/
 ├── .github/                                # GitHub Actions CI workflows
 ├── docs/                                   # Sphinx documentation source files
-├── notebook/                               # Final notebooks with definitive results & evaluations+
+├── notebook/                               # Final notebooks with definitive results & evaluations
 │   └── train_val_F_CTrans/                 # Saved model weights and training checkpoints
 ├── roadtrip/                               # Exploratory notebooks documenting design iterations
 │   └── saved_models/                       # Saved model weights and training checkpoints

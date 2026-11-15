@@ -5,8 +5,8 @@ from torch.utils.data import Dataset
 
 class EEGpreprocessing:
     """
-    Pipeline for EEG signal preprocessing, including resampling,band-pass filtering,
-    epoch extraction, and normalization.
+    Pipeline for EEG signal preprocessing, including resampling, band-pass filtering and
+    epoch extraction.
     """
 
     def __init__(self, raw):

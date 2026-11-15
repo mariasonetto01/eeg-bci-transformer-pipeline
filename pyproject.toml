@@ -29,10 +29,9 @@ dev = [
   "nox",
 ]
 docs = [
-  "sphinx",
-  "pydata-sphinx-theme",
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
 ]
-
 [project.urls]
 Homepage = "https://github.com/mariasonetto01/eeg-bci-transformer-pipeline"
 Issues = "https://github.com/mariasonetto01/eeg-bci-transformer-pipeline/issues"

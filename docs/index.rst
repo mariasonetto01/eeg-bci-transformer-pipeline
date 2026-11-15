@@ -1,20 +1,22 @@
-EEG BCI Transformer Pipeline
-============================
+EEG BCI Transformer Pipeline documentation
+==========================================
 
-Welcome to the documentation of **EEG BCI Transformer Pipeline**, a |Python| deep learning
-framework built with |PyTorch| and |MNE| for Motor Imagery (MI) EEG signal classification
-using hybrid CNN-Transformer architectures.
+**EEG BCI Transformer Pipeline** is a deep learning framework written in Python, built with
+PyTorch and MNE for Motor Imagery (MI) EEG signal classification using hybrid CNN-Transformer
+architectures.
+
+To get started with training and evaluating models, check out the :doc:`overview` or explore
+the :doc:`api` to inspect model architectures and preprocessing utilities.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents
+   :caption: Documentation
 
    overview
    api
 
-Indices and tables
-==================
+.. toctree::
+   :maxdepth: 1
+   :caption: External Links
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   Source code repository <https://github.com/mariasonetto01/eeg-bci-transformer-pipeline>

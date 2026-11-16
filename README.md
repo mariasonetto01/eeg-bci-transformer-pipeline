@@ -19,6 +19,18 @@ The project uses the **[PhysioNet EEG Motor Movement/Imagery Dataset](https://do
 > **Dataset Citation:** Schalk, G. (2009). *EEG Motor Movement/Imagery Dataset* (version 1.0.0). PhysioNet. RRID:SCR_007345. [https://doi.org/10.13026/C28G6P](https://doi.org/10.13026/C28G6P)
 
 ---
+## Architectures at a Glance
+
+Both models process raw EEG epochs through parallel spatial and temporal Transformer streams, differing in feature pooling, normalization, and classification head design:
+
+| Component | `F_CTrans` (Baseline — Xie et al., 2022) | `F_CTrans_modified` (Custom Variant) |
+| :--- | :--- | :--- |
+| **Feature Extraction** | Parallel Spatial & Temporal Conv + Transformer Encoders | Parallel Spatial & Temporal Conv + Transformer Encoders |
+| **Stream Pooling** | Global Average Pooling (`Mean`) | Dual Global Pooling (`Mean + Max` concatenated) |
+| **Pre-Fusion Normalization** | None | Independent `LayerNorm` on spatial and temporal features |
+| **Classification Head** | Single Linear Layer | Multi-Layer Perceptron (`Linear -> GELU/ReLU -> Dropout -> Linear`) |
+
+---
 
 ## Project Structure
 
@@ -42,3 +54,95 @@ eeg-bci-transformer-pipeline/
 ├── pyproject.toml                          # Package metadata & build configuration
 ├── requirements.txt                        # Python dependencies
 └── README.md
+```
+
+---
+
+## Installation
+
+1. **Clone the repository and navigate into the project directory:**
+
+```bash
+git clone [https://github.com/mariasonetto01/eeg-bci-transformer-pipeline.git](https://github.com/mariasonetto01/eeg-bci-transformer-pipeline.git)
+cd eeg-bci-transformer-pipeline
+```
+
+2. **Create and activate a virtual environment (recommended):**
+
+```bash
+python -m venv venv
+source venv/bin/activate      
+```
+3. **Install the package in editable mode:**
+
+```bash
+pip install -e .
+```
+---
+
+## Testing
+
+This project uses [Nox](https://nox.thea.codes/) to automate code quality checks, testing, and documentation builds.
+
+Run all checks (Ruff, Pylint, and Sphinx documentation) with:
+
+```bash
+nox -s ruff pylint docs
+```
+
+---
+## Documentation
+
+Full API references, architectural details, and usage guides are built with [Sphinx](https://www.sphinx-doc.org/) and hosted online:
+
+- **Online Documentation:** [mariasonetto01.github.io/eeg-bci-transformer-pipeline](https://mariasonetto01.github.io/eeg-bci-transformer-pipeline/)
+
+---
+## Experimental Workflow Overview
+
+First, raw EEG recordings are processed through the `EEGpreprocessing` module applying band-pass filtering in the sensorimotor rhythms (:math:`\mu` and :math:`\beta` bands), epoch extraction around cue annotations (``T1``, ``T2``) and partitioned via a **5-Fold `GroupKFold`** strategy grouped by subject ID. 
+This subject-independent split prevents data leakage, ensuring that z-score normalization statistics (`train_mean`, `train_std`) are computed exclusively on each training fold and applied strictly to unseen validation and test subjects.
+
+The modeling phase evaluates two dual-stream CNN-Transformer variants: the baseline `F_CTrans` architecture (Jin Xie et al., 2022), trained under its original fixed learning rate schedule (`MultiStepLR`) to establish a reference benchmark, and an enhanced version (`F_CTrans_modified`).
+
+Upon comparing both architectures and selecting the superior model, the workflow transitions to hyperparameter optimization.To identify an optimal regularization regime, a systematic Grid Search over learning rate, weight decay, and dropout is conducted across two splits (Folds 1 and 4), prioritizing a balanced trade-off between validation accuracy and loss stability.
+
+Finally, using the optimal hyperparameter configuration, the selected model is trained across all **5 `GroupKFold` splits** via `EEGTrainer`, checkpointing the best-performing weights alongside the fold-specific normalization statistics. Generalization performance is ultimately assessed on the held-out test set through a **5-Fold Probability Ensemble**, averaging softmax predictions across all five models to reduce variance and produce robust final classifications.
+
+The modeling phase begins by establishing a benchmark using the baseline `F_CTrans` architecture (Jin Xie et al., 2022) under its original fixed learning rate schedule (`MultiStepLR`). Driven by empirical training diagnostics—specifically early convergence stagnation and subsequent generalization gaps—the workflow transitions to adaptive learning rate scheduling (`ReduceLROnPlateau` monitoring validation accuracy) alongside architectural enhancements (`F_CTrans_modified`). To identify an optimal regularization regime without subject-specific bias, a systematic **Grid Search** over learning rate, weight decay, and dropout is conducted across two representative splits (Folds 1 and 4), prioritizing a balanced trade-off between validation accuracy and loss stability.
+
+Finally, using the selected hyperparameters, the model is trained across all **5 `GroupKFold` splits** via `EEGTrainer`, checkpointing the best-performing weights and fold-specific normalization parameters. Generalization performance is ultimately assessed on the held-out test set through a **5-Fold Probability Ensemble**, averaging softmax predictions across all five models to reduce variance and produce robust final classifications.
+
+---
+## Experimental Results
+
+### Final Model Configuration
+
+The table below summarizes the architectural parameters and optimal hyperparameters selected via cross-validated grid search for the final 5-fold ensemble training:
+
+| Category | Parameter | Value |
+| :--- | :--- | :--- |
+| **Architecture** | Selected Model | `F_CTrans` |
+| | Input Channels (`num_channels`) | `64` |
+| | Embedding Dimension (`d_model`) | `128` |
+| | Attention Heads (`nhead`) | `8` |
+| | Feed-Forward Dimension (`d_ff`) | `512` |
+| | Transformer Layers (`num_layers`) | `3` |
+| **Optimization** | Optimizer | `Adam`  |
+| | Initial Learning Rate (`lr`) | `0.001` |
+| | Weight Decay | `0.001 ` |
+| | Dropout Rate | `0.3` |
+| | Scheduler | `MultiStepLR` (`milestones=[10, 30]`, `gamma=0.1`) |
+| | Batch Size / Epochs | `64` / `50` |
+| **Evaluation** | Cross-Validation Strategy | 5-Fold `GroupKFold` (Subject-Independent) |
+| | Inference Method | 5-Fold Softmax Probability Ensemble |
+
+---
+
+### Test Set Performance
+
+Evaluated on the held-out test set of unseen subjects, the 5-fold probability ensemble achieved an overall **Test Accuracy of 81.41%**, confirming the effectiveness of the sensorimotor band-pass preprocessing, adaptive learning rate scheduling, and regularization strategy.
+
+As illustrated in the figure below, the model exhibits well-balanced classification performance across both motor imagery classes, achieving a **Precision of 83.48%** and a **Specificity of 84.74%**, alongside a **Recall of 78.05%** and an **F1-Score of 80.67%**. The close alignment between overall accuracy and F1-score demonstrates strong cross-individual generalization without bias toward either class.
+
+![Test Set Classification Metrics (5-Fold Ensemble)](test_ensemble_metrics.png)

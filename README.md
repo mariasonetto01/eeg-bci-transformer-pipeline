@@ -28,7 +28,7 @@ Both models process raw EEG epochs through parallel spatial and temporal Transfo
 | **Feature Extraction** | Parallel Spatial & Temporal Conv + Transformer Encoders | Parallel Spatial & Temporal Conv + Transformer Encoders |
 | **Stream Pooling** | Global Average Pooling (`Mean`) | Dual Global Pooling (`Mean + Max` concatenated) |
 | **Pre-Fusion Normalization** | None | Independent `LayerNorm` on spatial and temporal features |
-| **Classification Head** | Single Linear Layer | Multi-Layer Perceptron (`Linear -> GELU/ReLU -> Dropout -> Linear`) |
+| **Classification Head** | Single Linear Layer | Multi-Layer Perceptron (`Linear -> ReLU -> Dropout -> Linear`) |
 
 ---
 
@@ -108,10 +108,6 @@ The modeling phase evaluates two dual-stream CNN-Transformer variants: the basel
 Upon comparing both architectures and selecting the superior model, the workflow transitions to hyperparameter optimization.To identify an optimal regularization regime, a systematic Grid Search over learning rate, weight decay, and dropout is conducted across two splits (Folds 1 and 4), prioritizing a balanced trade-off between validation accuracy and loss stability.
 
 Finally, using the optimal hyperparameter configuration, the selected model is trained across all **5 `GroupKFold` splits** via `EEGTrainer`, checkpointing the best-performing weights alongside the fold-specific normalization statistics. Generalization performance is ultimately assessed on the held-out test set through a **5-Fold Probability Ensemble**, averaging softmax predictions across all five models to reduce variance and produce robust final classifications.
-
-The modeling phase begins by establishing a benchmark using the baseline `F_CTrans` architecture (Jin Xie et al., 2022) under its original fixed learning rate schedule (`MultiStepLR`). Driven by empirical training diagnostics—specifically early convergence stagnation and subsequent generalization gaps—the workflow transitions to adaptive learning rate scheduling (`ReduceLROnPlateau` monitoring validation accuracy) alongside architectural enhancements (`F_CTrans_modified`). To identify an optimal regularization regime without subject-specific bias, a systematic **Grid Search** over learning rate, weight decay, and dropout is conducted across two representative splits (Folds 1 and 4), prioritizing a balanced trade-off between validation accuracy and loss stability.
-
-Finally, using the selected hyperparameters, the model is trained across all **5 `GroupKFold` splits** via `EEGTrainer`, checkpointing the best-performing weights and fold-specific normalization parameters. Generalization performance is ultimately assessed on the held-out test set through a **5-Fold Probability Ensemble**, averaging softmax predictions across all five models to reduce variance and produce robust final classifications.
 
 ---
 ## Experimental Results

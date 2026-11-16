@@ -145,4 +145,4 @@ Evaluated on the held-out test set of unseen subjects, the 5-fold probability en
 
 As illustrated in the figure below, the model exhibits well-balanced classification performance across both motor imagery classes, achieving a **Precision of 83.48%** and a **Specificity of 84.74%**, alongside a **Recall of 78.05%** and an **F1-Score of 80.67%**. The close alignment between overall accuracy and F1-score demonstrates strong cross-individual generalization without bias toward either class.
 
-![Test Set Classification Metrics (5-Fold Ensemble)](test_ensemble_metrics.png)
+![Test Set Classification Metrics (5-Fold Ensemble)](notebook/test_ensemble_metrics.png)
